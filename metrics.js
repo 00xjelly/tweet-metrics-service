@@ -7,11 +7,14 @@ const apifyClient = new ApifyClient({
 });
 
 async function getTweetMetrics(tweetId) {
+  console.log(`Fetching metrics for tweet: ${tweetId}`);
   const run = await apifyClient.actor('apify/twitter-scraper').call({
     tweetUrls: [`https://twitter.com/i/web/status/${tweetId}`],
   });
 
   const { items } = await run.dataset().listItems();
+  console.log(`Got response for tweet ${tweetId}:`, items);
+  
   if (!items || items.length === 0) {
     throw new Error(`No data found for tweet ID: ${tweetId}`);
   }
@@ -19,13 +22,18 @@ async function getTweetMetrics(tweetId) {
 }
 
 async function updateTweetMetrics(type, selection) {
+  console.log(`Starting update with type: ${type}, selection: ${selection}`);
+  
   const auth = await authorize();
   const sheets = google.sheets({ version: 'v4', auth });
   
+  console.log('Fetching data from Log sheet...');
   const logRange = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.SPREADSHEET_ID,
     range: 'Log!A:D',
   });
+
+  console.log('Log sheet data:', logRange.data.values);
 
   if (!logRange.data.values || logRange.data.values.length <= 1) {
     throw new Error('No data found in Log sheet');
@@ -71,6 +79,8 @@ async function updateTweetMetrics(type, selection) {
       throw new Error('Invalid selection type. Use: single, multiple, month, or all');
   }
 
+  console.log('Tweet IDs to update:', tweetIds);
+
   if (tweetIds.length === 0) {
     throw new Error('No tweet IDs found for the given criteria');
   }
@@ -81,9 +91,13 @@ async function updateTweetMetrics(type, selection) {
 
   for (let i = 0; i < tweetIds.length; i += batchSize) {
     const batch = tweetIds.slice(i, i + batchSize);
+    console.log(`Processing batch ${i/batchSize + 1}:`, batch);
+    
     await Promise.all(batch.map(async (tweetId) => {
       try {
         const tweetData = await getTweetMetrics(tweetId);
+        console.log(`Got data for tweet ${tweetId}:`, tweetData);
+        
         metrics.push([
           tweetData.createdAt,
           tweetId,
@@ -101,6 +115,7 @@ async function updateTweetMetrics(type, selection) {
           tweetData.isQuote ? 'Yes' : 'No'
         ]);
       } catch (error) {
+        console.error(`Error processing tweet ${tweetId}:`, error);
         errors.push({ tweetId, error: error.message });
       }
     }));
@@ -110,7 +125,10 @@ async function updateTweetMetrics(type, selection) {
     }
   }
 
+  console.log('Metrics to append:', metrics);
+
   if (metrics.length > 0) {
+    console.log('Appending to PostMetrics sheet...');
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PostMetrics!A1',
@@ -122,11 +140,14 @@ async function updateTweetMetrics(type, selection) {
     });
   }
 
-  return { 
+  const result = { 
     updatedCount: metrics.length,
     failedCount: errors.length,
     errors: errors.length > 0 ? errors : undefined
   };
+  
+  console.log('Update complete:', result);
+  return result;
 }
 
 export { updateTweetMetrics };
