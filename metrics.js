@@ -7,22 +7,52 @@ const apifyClient = new ApifyClient({
 });
 
 async function getTweetMetrics(tweetId) {
-  console.log(`Fetching metrics for tweet: ${tweetId}`);
-  const run = await apifyClient.actor('apify/twitter-scraper').call({
-    tweetUrls: [`https://twitter.com/i/web/status/${tweetId}`],
-  });
+  try {
+    console.log(`Fetching metrics for tweet: ${tweetId}`);
+    
+    const run = await apifyClient.actor("CJdippxWmn9uRfooo").call({
+      tweetIDs: [tweetId],
+      maxItems: 1,
+      queryType: "Latest",
+      lang: "en",
+      since: "2021-12-31_23:59:59_UTC",
+      until: "2024-12-31_23:59:59_UTC"
+    });
 
-  const { items } = await run.dataset().listItems();
-  console.log(`Got response for tweet ${tweetId}:`, items);
-  
-  if (!items || items.length === 0) {
-    throw new Error(`No data found for tweet ID: ${tweetId}`);
+    const { items } = await run.dataset().listItems();
+    
+    if (!items || items.length === 0) {
+      throw new Error(`No data found for tweet ID: ${tweetId}`);
+    }
+
+    const tweetData = items[0];
+    console.log('Raw tweet data:', tweetData);
+
+    // Validate and transform metrics with fallback values
+    return {
+      createdAt: tweetData.createdAt || new Date().toISOString(),
+      user: { 
+        url: tweetData.userUrl || tweetData.user?.url || ''
+      },
+      stats: {
+        impressions: Number(tweetData.impressions) || 0,
+        likes: Number(tweetData.likes) || 0,
+        replies: Number(tweetData.replies) || 0,
+        retweets: Number(tweetData.retweets) || 0,
+        bookmarks: Number(tweetData.bookmarks) || 0
+      },
+      text: tweetData.text || '',
+      isReply: !!tweetData.isReply,
+      isQuote: !!tweetData.isQuote
+    };
+  } catch (error) {
+    console.error(`Failed to fetch metrics for tweet ${tweetId}:`, error);
+    throw error;
   }
-  return items[0];
 }
 
 async function updateTweetMetrics(type, selection) {
-  console.log(`Starting update with type: ${type}, selection: ${selection}`);
+  console.log(`Starting update with type: ${type}, selection: ${selection}`)
   
   const auth = await authorize();
   const sheets = google.sheets({ version: 'v4', auth });
