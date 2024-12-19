@@ -73,7 +73,7 @@ async function getTweetMetrics(tweetIds) {
     try {
       // Run the Actor and wait for it to finish
       console.log('Attempting to call actor...');
-      const run = await apifyClient.actor("CJdippxWmn9uRfooo").call(input);
+      const run = await apifyClient.actor("kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest").call(input);
       
       console.log('Run Details:', JSON.stringify({
         id: run.id,
