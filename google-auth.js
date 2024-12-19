@@ -1,24 +1,26 @@
 import { google } from 'googleapis';
-import { JWT } from 'google-auth-library';
 
-export async function authorize() {
-  console.log('Starting Google authorization...');
+// Function to authorize Google Sheets API
+async function authorize() {
   try {
+    // Load credentials from environment variable
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-    console.log('Successfully parsed Google credentials');
     
-    const client = new JWT({
-      email: credentials.client_email,
-      key: credentials.private_key,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
+    // Create a new JWT client
+    const client = new google.auth.JWT(
+      credentials.client_email,
+      null,
+      credentials.private_key,
+      ['https://www.googleapis.com/auth/spreadsheets']
+    );
 
-    console.log('Initializing JWT client...');
+    // Authenticate and return the client
     await client.authorize();
-    console.log('Successfully authorized with Google');
     return client;
   } catch (error) {
-    console.error('Error in Google authorization:', error);
-    throw error;
+    console.error('Google Authentication Error:', error);
+    throw new Error('Failed to authenticate with Google: ' + error.message);
   }
 }
+
+export { authorize };
