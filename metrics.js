@@ -10,7 +10,8 @@ async function getTweetMetrics(tweetId) {
   try {
     console.log(`Fetching metrics for tweet: ${tweetId}`);
     
-    const run = await apifyClient.actor("CJdippxWmn9uRfooo").call({
+    // Use the specific Actor ID from the documentation
+    const run = await apifyClient.actor('kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest').call({
       tweetIDs: [tweetId],
       maxItems: 1,
       queryType: "Latest",
@@ -19,7 +20,8 @@ async function getTweetMetrics(tweetId) {
       until: "2024-12-31_23:59:59_UTC"
     });
 
-    const { items } = await run.dataset().listItems();
+    // Fetch dataset items directly
+    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
     
     if (!items || items.length === 0) {
       throw new Error(`No data found for tweet ID: ${tweetId}`);
@@ -51,6 +53,7 @@ async function getTweetMetrics(tweetId) {
   }
 }
 
+// Rest of the file remains the same as in the previous implementation
 async function updateTweetMetrics(type, selection) {
   console.log(`Starting update with type: ${type}, selection: ${selection}`)
   
