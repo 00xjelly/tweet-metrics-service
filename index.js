@@ -13,17 +13,21 @@ app.post('/update-metrics', async (req, res) => {
     const { type, selection } = req.body;
     const result = await updateTweetMetrics(type, selection);
     console.log('Update completed successfully:', result);
-    res.json({ 
-      success: true, 
-      result,
-      updatedCount: result.updatedCount,
-      failedCount: result.failedCount
+    
+    // Ensure response matches Apps Script expectations
+    res.json({
+      success: true,
+      updatedCount: result.updatedCount || 0,
+      failedCount: result.failedCount || 0,
+      error: result.errors ? result.errors[0]?.error : undefined
     });
   } catch (error) {
     console.error('Error updating metrics:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.json({
+      success: false,
+      updatedCount: 0,
+      failedCount: 0,
+      error: error.message
     });
   }
 });
