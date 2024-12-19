@@ -1,81 +1,70 @@
 import { google } from 'googleapis';
-import { ApifyClient } from 'apify-client';
+import fetch from 'node-fetch';
 import { authorize } from './google-auth.js';
-
-const apifyClient = new ApifyClient({
-  token: process.env.APIFY_TOKEN,
-});
 
 async function getTweetMetrics(tweetId) {
   try {
-    console.log('Apify Token:', process.env.APIFY_TOKEN ? 'PRESENT' : 'MISSING');
     console.log(`Fetching metrics for tweet: ${tweetId}`);
     
-    try {
-      // Verbose logging for debugging
-      console.log('Attempting to run Apify Actor');
-      console.log('Actor ID:', 'kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest');
-      console.log('Input Parameters:', JSON.stringify({
-        tweetIDs: [tweetId],
-        maxItems: 1,
-        queryType: "Latest",
-        lang: "en",
-        since: "2021-12-31_23:59:59_UTC",
-        until: "2024-12-31_23:59:59_UTC"
-      }, null, 2));
+    const apiUrl = `https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`;
+    
+    const requestBody = {
+      tweetIDs: [tweetId],
+      twitterContent: "make",
+      maxItems: 1,
+      queryType: "Latest",
+      lang: "en",
+      from: "elonmusk"
+    };
 
-      // Use the specific Actor ID from the documentation
-      const run = await apifyClient.actor('kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest').call({
-        tweetIDs: [tweetId],
-        maxItems: 1,
-        queryType: "Latest",
-        lang: "en",
-        since: "2021-12-31_23:59:59_UTC",
-        until: "2024-12-31_23:59:59_UTC"
+    console.log('API Request URL:', apiUrl);
+    console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API Response Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText
       });
-
-      console.log('Actor run successful. Run details:', JSON.stringify(run, null, 2));
-
-      // Fetch dataset items directly
-      console.log('Attempting to fetch dataset');
-      const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-      
-      console.log('Dataset items:', JSON.stringify(items, null, 2));
-
-      if (!items || items.length === 0) {
-        throw new Error(`No data found for tweet ID: ${tweetId}`);
-      }
-
-      const tweetData = items[0];
-      console.log('Raw tweet data:', JSON.stringify(tweetData, null, 2));
-
-      // Validate and transform metrics with fallback values
-      return {
-        createdAt: tweetData.createdAt || new Date().toISOString(),
-        user: { 
-          url: tweetData.userUrl || tweetData.user?.url || ''
-        },
-        stats: {
-          impressions: Number(tweetData.impressions) || 0,
-          likes: Number(tweetData.likes) || 0,
-          replies: Number(tweetData.replies) || 0,
-          retweets: Number(tweetData.retweets) || 0,
-          bookmarks: Number(tweetData.bookmarks) || 0
-        },
-        text: tweetData.text || '',
-        isReply: !!tweetData.isReply,
-        isQuote: !!tweetData.isQuote
-      };
-    } catch (apiError) {
-      console.error('Detailed Apify API Error:', {
-        message: apiError.message,
-        stack: apiError.stack,
-        name: apiError.name,
-        code: apiError.code,
-        response: apiError.response ? JSON.stringify(apiError.response) : 'No response'
-      });
-      throw apiError;
+      throw new Error(`API call failed: ${response.status} ${response.statusText}`);
     }
+
+    const items = await response.json();
+    
+    console.log('Raw API Response:', JSON.stringify(items, null, 2));
+
+    if (!items || items.length === 0) {
+      throw new Error(`No data found for tweet ID: ${tweetId}`);
+    }
+
+    const tweetData = items[0];
+
+    // Transform data to match our expected structure
+    return {
+      createdAt: tweetData.createdAt || new Date().toISOString(),
+      user: { 
+        url: tweetData.author?.url || tweetData.author?.twitterUrl || ''
+      },
+      stats: {
+        impressions: Number(tweetData.viewCount) || 0,
+        likes: Number(tweetData.likeCount) || 0,
+        replies: Number(tweetData.replyCount) || 0,
+        retweets: Number(tweetData.retweetCount) || 0,
+        bookmarks: Number(tweetData.bookmarkCount) || 0
+      },
+      text: tweetData.text || '',
+      isReply: !!tweetData.isReply,
+      isQuote: !!tweetData.isQuote
+    };
   } catch (error) {
     console.error(`Comprehensive error for tweet ${tweetId}:`, {
       message: error.message,
