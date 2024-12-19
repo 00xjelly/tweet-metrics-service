@@ -94,13 +94,14 @@ async function updateTweetMetrics(type, selection) {
   const rows = logRange.data.values.slice(1); // Skip header row
   let selectedRows = [];
 
+  // Handle different selection types
   switch(type) {
     case 'single':
-      const rowIndex = parseInt(selection) - 2; // -2 because of 0-based index and header row
+      const rowIndex = parseInt(selection) - 2;
       if (rowIndex >= 0 && rowIndex < rows.length) {
         selectedRows.push({
           rowNumber: rowIndex + 2,
-          tweetId: rows[rowIndex][3] // Column D contains Tweet ID
+          tweetId: rows[rowIndex][3]
         });
       }
       break;
@@ -125,7 +126,7 @@ async function updateTweetMetrics(type, selection) {
       }
 
       rows.forEach((row, idx) => {
-        const dateStr = row[0]; // Column A contains date
+        const dateStr = row[0];
         try {
           const rowDate = new Date(dateStr);
           if (rowDate.getFullYear() === year && rowDate.getMonth() === month - 1) {
@@ -214,14 +215,12 @@ async function updateTweetMetrics(type, selection) {
     });
   }
 
-  const result = { 
+  // Ensure the return value matches Apps Script expectations
+  return { 
     updatedCount: metrics.length,
     failedCount: errors.length,
     errors: errors.length > 0 ? errors : undefined
   };
-  
-  console.log('Update complete:', JSON.stringify(result, null, 2));
-  return result;
 }
 
 export { updateTweetMetrics };
