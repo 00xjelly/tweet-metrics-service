@@ -1,5 +1,5 @@
 // Configuration
-const API_URL = 'YOUR_RAILWAY_URL'; // e.g., 'https://tweet-metrics-service-production.up.railway.app';
+const API_URL = 'https://tweet-metrics-service-production.up.railway.app';
 
 // Create menu when spreadsheet opens
 function onOpen() {
@@ -13,23 +13,11 @@ function onOpen() {
 function showUpdateDialog() {
   const html = HtmlService.createHtmlOutput(`
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        padding: 20px;
-        color: #333;
-      }
-      .container {
-        max-width: 400px;
-        margin: 0 auto;
-      }
-      .form-group {
-        margin-bottom: 20px;
-      }
-      label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: 500;
-      }
+      body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+      .container { max-width: 400px; margin: 0 auto; }
+      .form-group { margin-bottom: 20px; }
+      label { display: block; margin-bottom: 8px; font-weight: 500; }
+      .help-text { font-size: 12px; color: #666; margin-top: 4px; }
       select, input {
         width: 100%;
         padding: 8px 12px;
@@ -37,9 +25,7 @@ function showUpdateDialog() {
         border-radius: 4px;
         font-size: 14px;
       }
-      .input-wrapper {
-        margin-top: 10px;
-      }
+      .input-wrapper { margin-top: 10px; }
       button {
         background-color: #4285f4;
         color: white;
@@ -50,9 +36,7 @@ function showUpdateDialog() {
         font-size: 14px;
         width: 100%;
       }
-      button:hover {
-        background-color: #357abd;
-      }
+      button:hover { background-color: #357abd; }
       .status {
         margin-top: 20px;
         padding: 15px;
@@ -80,10 +64,10 @@ function showUpdateDialog() {
       <div class="form-group">
         <label for="updateType">Update Type:</label>
         <select id="updateType" onchange="toggleInputs()">
-          <option value="single">Single Tweet</option>
-          <option value="multiple">Multiple Tweets</option>
+          <option value="single">Single Row</option>
+          <option value="multiple">Multiple Rows</option>
           <option value="month">By Month</option>
-          <option value="all">All Tweets</option>
+          <option value="all">All Rows</option>
         </select>
 
         <div id="inputWrapper" class="input-wrapper">
@@ -97,9 +81,9 @@ function showUpdateDialog() {
 
     <script>
       // Initialize the form
-      document.addEventListener('DOMContentLoaded', function() {
+      window.onload = function() {
         toggleInputs();
-      });
+      };
 
       // Toggle input fields based on selection
       function toggleInputs() {
@@ -110,20 +94,23 @@ function showUpdateDialog() {
         switch(updateType) {
           case 'single':
             inputHtml = `
-              <label for="tweetId">Tweet ID:</label>
-              <input type="text" id="tweetId" placeholder="Enter Tweet ID">
+              <label for="rowNumber">Row Number:</label>
+              <input type="number" id="rowNumber" min="2" step="1" placeholder="Enter row number (e.g., 2)">
+              <div class="help-text">Enter the row number from the 'Log' sheet (row 1 is the header)</div>
             `;
             break;
           case 'multiple':
             inputHtml = `
-              <label for="tweetIds">Tweet IDs (comma-separated):</label>
-              <input type="text" id="tweetIds" placeholder="ID1, ID2, ID3">
+              <label for="rowNumbers">Row Numbers:</label>
+              <input type="text" id="rowNumbers" placeholder="e.g., 2, 3, 4">
+              <div class="help-text">Enter row numbers from the 'Log' sheet, separated by commas</div>
             `;
             break;
           case 'month':
             inputHtml = `
               <label for="monthPicker">Select Month:</label>
               <input type="month" id="monthPicker">
+              <div class="help-text">Will update all tweets from the selected month</div>
             `;
             break;
         }
@@ -135,7 +122,7 @@ function showUpdateDialog() {
       function showStatus(message, type) {
         const statusDiv = document.getElementById('status');
         statusDiv.textContent = message;
-        statusDiv.className = `status ${type}`;
+        statusDiv.className = 'status ' + type;
         statusDiv.style.display = 'block';
       }
 
@@ -146,10 +133,10 @@ function showUpdateDialog() {
 
         switch(updateType) {
           case 'single':
-            selection = document.getElementById('tweetId').value;
+            selection = document.getElementById('rowNumber').value;
             break;
           case 'multiple':
-            selection = document.getElementById('tweetIds').value;
+            selection = document.getElementById('rowNumbers').value;
             break;
           case 'month':
             selection = document.getElementById('monthPicker').value;
@@ -166,8 +153,8 @@ function showUpdateDialog() {
         google.script.run
           .withSuccessHandler(function(result) {
             showStatus(
-              `Successfully updated ${result.updatedCount} tweet(s)` + 
-              (result.failedCount ? `\n${result.failedCount} updates failed.` : ''),
+              'Successfully updated ' + result.updatedCount + ' tweet(s)' + 
+              (result.failedCount ? '\n' + result.failedCount + ' updates failed.' : ''),
               'success'
             );
           })
@@ -185,11 +172,39 @@ function showUpdateDialog() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Update Tweet Metrics');
 }
 
+// Function to get Tweet ID from row number
+function getTweetIdFromRow(rowNumber) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Log');
+  return sheet.getRange(rowNumber, 4).getValue(); // Column D (4) contains Tweet IDs
+}
+
 // Function to trigger the metrics update
 function triggerMetricsUpdate(type, selection) {
+  let tweetIds = '';
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Log');
+  
+  switch(type) {
+    case 'single':
+      tweetIds = getTweetIdFromRow(selection);
+      break;
+    case 'multiple':
+      tweetIds = selection.split(',')
+        .map(row => row.trim())
+        .map(rowNum => getTweetIdFromRow(rowNum))
+        .join(',');
+      break;
+    case 'month':
+      // For month selection, we'll still send the month to the API
+      tweetIds = selection;
+      break;
+    case 'all':
+      // For 'all', we'll let the API handle it
+      break;
+  }
+
   const payload = {
     type: type,
-    selection: selection
+    selection: type === 'single' || type === 'multiple' ? tweetIds : selection
   };
 
   const options = {
