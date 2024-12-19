@@ -53,7 +53,6 @@ async function getTweetMetrics(tweetId) {
   }
 }
 
-// Rest of the file remains the same as in the previous implementation
 async function updateTweetMetrics(type, selection) {
   console.log(`Starting update with type: ${type}, selection: ${selection}`)
   
