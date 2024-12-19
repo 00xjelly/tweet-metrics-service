@@ -13,15 +13,31 @@ app.post('/update-metrics', async (req, res) => {
     const { type, selection } = req.body;
     const result = await updateTweetMetrics(type, selection);
     console.log('Update completed successfully:', result);
-    res.json({ success: true, result });
+    res.json({ 
+      success: true, 
+      result,
+      updatedCount: result.updatedCount,
+      failedCount: result.failedCount
+    });
   } catch (error) {
     console.error('Error updating metrics:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
 });
 
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'Tweet Metrics Service is running' });
+  res.json({ 
+    status: 'ok', 
+    message: 'Tweet Metrics Service is running',
+    environment: {
+      googleCredentialsSet: !!process.env.GOOGLE_CREDENTIALS,
+      spreadsheetIdSet: !!process.env.SPREADSHEET_ID,
+      apifyTokenSet: !!process.env.APIFY_TOKEN
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
