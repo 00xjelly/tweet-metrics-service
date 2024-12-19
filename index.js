@@ -8,9 +8,11 @@ const app = express();
 app.use(express.json());
 
 app.post('/update-metrics', async (req, res) => {
+  console.log('Received update request:', req.body);
   try {
     const { type, selection } = req.body;
     const result = await updateTweetMetrics(type, selection);
+    console.log('Update completed successfully:', result);
     res.json({ success: true, result });
   } catch (error) {
     console.error('Error updating metrics:', error);
@@ -25,4 +27,8 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('Environment check:');
+  console.log('- GOOGLE_CREDENTIALS set:', !!process.env.GOOGLE_CREDENTIALS);
+  console.log('- SPREADSHEET_ID set:', !!process.env.SPREADSHEET_ID);
+  console.log('- APIFY_TOKEN set:', !!process.env.APIFY_TOKEN);
 });
