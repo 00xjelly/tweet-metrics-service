@@ -33,22 +33,35 @@ async function updateTweetMetrics(type, selection) {
     range: 'Log!A:D',
   });
 
-  console.log('Log sheet data:', logRange.data.values);
-
   if (!logRange.data.values || logRange.data.values.length <= 1) {
     throw new Error('No data found in Log sheet');
   }
 
-  const rows = logRange.data.values.slice(1);
-  let tweetIds = [];
+  const rows = logRange.data.values.slice(1); // Skip header row
+  let selectedRows = [];
 
   switch(type) {
     case 'single':
-      tweetIds = [selection];
+      const rowIndex = parseInt(selection) - 2; // -2 because of 0-based index and header row
+      if (rowIndex >= 0 && rowIndex < rows.length) {
+        selectedRows.push({
+          rowNumber: rowIndex + 2,
+          tweetId: rows[rowIndex][3] // Column D contains Tweet ID
+        });
+      }
       break;
 
     case 'multiple':
-      tweetIds = selection.split(',').map(id => id.trim());
+      const rowNumbers = selection.split(',').map(num => num.trim());
+      rowNumbers.forEach(rowNum => {
+        const idx = parseInt(rowNum) - 2;
+        if (idx >= 0 && idx < rows.length) {
+          selectedRows.push({
+            rowNumber: parseInt(rowNum),
+            tweetId: rows[idx][3]
+          });
+        }
+      });
       break;
 
     case 'month':
@@ -57,13 +70,15 @@ async function updateTweetMetrics(type, selection) {
         throw new Error('Invalid month format. Use YYYY-MM (e.g., 2024-01)');
       }
 
-      rows.forEach(row => {
-        const dateStr = row[0];
-        const tweetId = row[3];
+      rows.forEach((row, idx) => {
+        const dateStr = row[0]; // Column A contains date
         try {
           const rowDate = new Date(dateStr);
           if (rowDate.getFullYear() === year && rowDate.getMonth() === month - 1) {
-            tweetIds.push(tweetId);
+            selectedRows.push({
+              rowNumber: idx + 2,
+              tweetId: row[3]
+            });
           }
         } catch (error) {
           console.warn(`Invalid date format in row: ${dateStr}`);
@@ -72,31 +87,34 @@ async function updateTweetMetrics(type, selection) {
       break;
 
     case 'all':
-      tweetIds = rows.map(row => row[3]);
+      selectedRows = rows.map((row, idx) => ({
+        rowNumber: idx + 2,
+        tweetId: row[3]
+      }));
       break;
 
     default:
       throw new Error('Invalid selection type. Use: single, multiple, month, or all');
   }
 
-  console.log('Tweet IDs to update:', tweetIds);
+  console.log('Selected rows:', selectedRows);
 
-  if (tweetIds.length === 0) {
-    throw new Error('No tweet IDs found for the given criteria');
+  if (selectedRows.length === 0) {
+    throw new Error('No valid rows found for the given criteria');
   }
 
   const metrics = [];
   const errors = [];
   const batchSize = 10;
 
-  for (let i = 0; i < tweetIds.length; i += batchSize) {
-    const batch = tweetIds.slice(i, i + batchSize);
-    console.log(`Processing batch ${i/batchSize + 1}:`, batch);
+  for (let i = 0; i < selectedRows.length; i += batchSize) {
+    const batch = selectedRows.slice(i, i + batchSize);
+    console.log(`Processing batch ${Math.floor(i/batchSize) + 1}:`, batch);
     
-    await Promise.all(batch.map(async (tweetId) => {
+    await Promise.all(batch.map(async ({ rowNumber, tweetId }) => {
       try {
         const tweetData = await getTweetMetrics(tweetId);
-        console.log(`Got data for tweet ${tweetId}:`, tweetData);
+        console.log(`Got data for row ${rowNumber}, tweet ${tweetId}:`, tweetData);
         
         metrics.push([
           tweetData.createdAt,
@@ -115,17 +133,15 @@ async function updateTweetMetrics(type, selection) {
           tweetData.isQuote ? 'Yes' : 'No'
         ]);
       } catch (error) {
-        console.error(`Error processing tweet ${tweetId}:`, error);
-        errors.push({ tweetId, error: error.message });
+        console.error(`Error processing row ${rowNumber}:`, error);
+        errors.push({ rowNumber, error: error.message });
       }
     }));
 
-    if (i + batchSize < tweetIds.length) {
+    if (i + batchSize < selectedRows.length) {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
-
-  console.log('Metrics to append:', metrics);
 
   if (metrics.length > 0) {
     console.log('Appending to PostMetrics sheet...');
