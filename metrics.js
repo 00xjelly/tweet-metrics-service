@@ -1,25 +1,29 @@
 import { google } from 'googleapis';
-import { ApifyClient } from 'apify-client';
 import { authorize } from './google-auth.js';
-
-const apifyClient = new ApifyClient({
-  token: process.env.APIFY_TOKEN,
-});
 
 async function getTweetMetrics(tweetId) {
   console.log(`Fetching metrics for tweet: ${tweetId}`);
   try {
-    const run = await apifyClient.actor('apify/twitter-scraper').call({
-      tweetIDs: [tweetId],
-      maxItems: 1,
-      filter: {
-        replies: false,
-        retweets: false,
-        media: false
+    // Use synchronous API endpoint
+    const response = await fetch(
+      `https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tweetIDs: [tweetId],
+          maxItems: 1
+        })
       }
-    });
+    );
 
-    const { items } = await run.dataset().listItems();
+    if (!response.ok) {
+      throw new Error(`Apify API error: ${response.status} ${response.statusText}`);
+    }
+
+    const items = await response.json();
     console.log(`Got response for tweet ${tweetId}:`, items);
     
     if (!items || items.length === 0) {
@@ -105,13 +109,14 @@ async function updateTweetMetrics(type, selection) {
 
   const metrics = [];
   const errors = [];
-  const batchSize = 10;
+  const batchSize = 5; // Reduced batch size for synchronous calls
 
   for (let i = 0; i < tweetIds.length; i += batchSize) {
     const batch = tweetIds.slice(i, i + batchSize);
     console.log(`Processing batch ${Math.floor(i/batchSize) + 1}:`, batch);
     
-    await Promise.all(batch.map(async (tweetId) => {
+    // Process tweets sequentially within each batch
+    for (const tweetId of batch) {
       try {
         const tweetData = await getTweetMetrics(tweetId);
         console.log(`Got data for tweet ${tweetId}:`, tweetData);
@@ -136,9 +141,12 @@ async function updateTweetMetrics(type, selection) {
         console.error(`Error processing tweet ${tweetId}:`, error);
         errors.push({ tweetId, error: error.message });
       }
-    }));
+      
+      // Add small delay between individual tweet processing
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
 
-    // Add delay between batches to respect rate limits
+    // Add delay between batches
     if (i + batchSize < tweetIds.length) {
       console.log('Waiting between batches...');
       await new Promise(resolve => setTimeout(resolve, 2000));
