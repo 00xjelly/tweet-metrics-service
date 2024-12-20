@@ -38,13 +38,21 @@ async function getTweetMetrics(tweetIds) {
     const data = await response.json();
     console.log(`Got response for tweets:`, data);
     
-    // Filter out mock or empty responses
-    return data.filter(tweet => 
+    // More aggressive filtering to remove mock entries and ensure only real tweets are processed
+    const filteredData = data.filter(tweet => 
       tweet && 
       tweet.type !== 'mock_tweet' && 
       tweet.id !== -1 && 
-      tweet.text !== "From KaitoEasyAPI, a reminder:..."
+      tweet.text && 
+      tweet.text.length > 0 &&
+      !tweet.text.includes('From KaitoEasyAPI, a reminder:') &&
+      tweet.id &&
+      typeof tweet.id === 'string'
     );
+
+    console.log(`Filtered tweets:`, filteredData);
+
+    return filteredData;
   } catch (error) {
     console.error(`Error fetching tweets:`, error);
     throw error;
