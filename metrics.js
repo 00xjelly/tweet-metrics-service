@@ -1,42 +1,39 @@
 import { google } from 'googleapis';
 import { authorize } from './google-auth.js';
+import fetch from 'node-fetch';
 
-async function getTweetMetrics(tweetIds) {
-  console.log(`Fetching metrics for tweets:`, tweetIds);
+const APIFY_URL = 'https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items';
+
+async function getTweetMetrics(tweetId) {
+  console.log(`Fetching metrics for tweet: ${tweetId}`);
   try {
-    // Format tweet IDs for API request
-    const tweetQuery = tweetIds.join(',');
-
-    const response = await fetch(
-      `https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tweetIDs: tweetIds,
-          maxItems: tweetIds.length || 1,
-          queryType: 'Latest',
-        })
-      }
-    );
+    const response = await fetch(`${APIFY_URL}?token=${process.env.APIFY_TOKEN}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tweetIDs: [tweetId],
+        maxItems: 1,
+        queryType: 'Latest'
+      })
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Apify API error: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(`Apify API error: ${response.status} - ${errorText}`);
     }
 
-    const items = await response.json();
-    console.log(`Got response from Apify:`, items);
+    const data = await response.json();
+    console.log(`Got response for tweet ${tweetId}:`, data);
     
-    if (!Array.isArray(items)) {
-      throw new Error('Invalid response format from Apify');
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error(`No data found for tweet ID: ${tweetId}`);
     }
 
-    return items;
+    return data[0];
   } catch (error) {
-    console.error(`Error fetching tweets:`, error);
+    console.error(`Error fetching tweet ${tweetId}:`, error);
     throw error;
   }
 }
@@ -62,11 +59,20 @@ async function updateTweetMetrics(type, selection) {
 
   switch(type) {
     case 'single':
-      tweetIds = [selection];
+      const rowIndex = parseInt(selection) - 2; // -2 because of 0-based index and header row
+      if (rowIndex >= 0 && rowIndex < rows.length) {
+        const tweetId = rows[rowIndex][3]; // Column D contains Tweet ID
+        if (tweetId) tweetIds.push(tweetId.toString().trim());
+      }
       break;
 
     case 'multiple':
-      tweetIds = selection.split(',').map(id => id.trim());
+      const rowNumbers = selection.split(',').map(num => parseInt(num.trim()) - 2);
+      tweetIds = rowNumbers
+        .filter(idx => idx >= 0 && idx < rows.length)
+        .map(idx => rows[idx][3])
+        .filter(id => id)
+        .map(id => id.toString().trim());
       break;
 
     case 'month':
@@ -75,22 +81,25 @@ async function updateTweetMetrics(type, selection) {
         throw new Error('Invalid month format. Use YYYY-MM (e.g., 2024-01)');
       }
 
-      rows.forEach(row => {
+      rows.forEach((row, idx) => {
         const dateStr = row[0];
-        const tweetId = row[3];
         try {
           const rowDate = new Date(dateStr);
           if (rowDate.getFullYear() === year && rowDate.getMonth() === month - 1) {
-            tweetIds.push(tweetId);
+            const tweetId = row[3];
+            if (tweetId) tweetIds.push(tweetId.toString().trim());
           }
         } catch (error) {
-          console.warn(`Invalid date format in row: ${dateStr}`);
+          console.warn(`Invalid date format in row ${idx + 2}: ${dateStr}`);
         }
       });
       break;
 
     case 'all':
-      tweetIds = rows.map(row => row[3]);
+      tweetIds = rows
+        .map(row => row[3])
+        .filter(id => id)
+        .map(id => id.toString().trim());
       break;
 
     default:
@@ -100,48 +109,44 @@ async function updateTweetMetrics(type, selection) {
   console.log('Tweet IDs to update:', tweetIds);
 
   if (tweetIds.length === 0) {
-    throw new Error('No tweet IDs found for the given criteria');
+    throw new Error('No valid tweet IDs found for the given criteria');
   }
 
   const metrics = [];
   const errors = [];
-  const batchSize = 5; // Process in small batches
+  const batchSize = 5;
 
   for (let i = 0; i < tweetIds.length; i += batchSize) {
     const batch = tweetIds.slice(i, i + batchSize);
     console.log(`Processing batch ${Math.floor(i/batchSize) + 1}:`, batch);
     
-    try {
-      const tweetDataList = await getTweetMetrics(batch);
-      
-      tweetDataList.forEach(tweetData => {
-        if (tweetData && tweetData.id) {
-          metrics.push([
-            tweetData.createdAt,
-            tweetData.id,
-            `https://twitter.com/${tweetData.author?.userName}`,
-            tweetData.createdAt,
-            tweetData.viewCount || 0,
-            tweetData.likeCount || 0,
-            tweetData.replyCount || 0,
-            tweetData.retweetCount || 0,
-            tweetData.bookmarkCount || 0,
-            new Date().toISOString(),
-            tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`,
-            tweetData.text || '',
-            tweetData.isReply ? 'Yes' : 'No',
-            tweetData.isQuote ? 'Yes' : 'No'
-          ]);
-        }
-      });
-    } catch (error) {
-      console.error(`Error processing batch:`, error);
-      batch.forEach(tweetId => {
+    await Promise.all(batch.map(async (tweetId) => {
+      try {
+        const tweetData = await getTweetMetrics(tweetId);
+        console.log(`Got data for tweet ${tweetId}:`, tweetData);
+        
+        metrics.push([
+          tweetData.createdAt,
+          tweetId,
+          `https://twitter.com/${tweetData.author?.userName || ''}`,
+          tweetData.createdAt,
+          tweetData.viewCount || 0,
+          tweetData.likeCount || 0,
+          tweetData.replyCount || 0,
+          tweetData.retweetCount || 0,
+          tweetData.bookmarkCount || 0,
+          new Date().toISOString(),
+          tweetData.url || `https://twitter.com/i/web/status/${tweetId}`,
+          tweetData.text || '',
+          tweetData.isReply ? 'Yes' : 'No',
+          tweetData.isQuote ? 'Yes' : 'No'
+        ]);
+      } catch (error) {
+        console.error(`Error processing tweet ${tweetId}:`, error);
         errors.push({ tweetId, error: error.message });
-      });
-    }
+      }
+    }));
 
-    // Add delay between batches
     if (i + batchSize < tweetIds.length) {
       console.log('Waiting between batches...');
       await new Promise(resolve => setTimeout(resolve, 2000));
