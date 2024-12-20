@@ -7,41 +7,40 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log('Request body:', req.body);
+  next();
+});
+
 app.post('/update-metrics', async (req, res) => {
-  console.log('Received update request:', req.body);
+  console.log('Received update-metrics request:', req.body);
   try {
     const { type, selection } = req.body;
-    const result = await updateTweetMetrics(type, selection);
-    console.log('Update completed successfully:', result);
     
-    // Ensure response matches Apps Script expectations
-    res.json({
-      success: true,
-      updatedCount: result.updatedCount || 0,
-      failedCount: result.failedCount || 0,
-      error: result.errors ? result.errors[0]?.error : undefined
-    });
+    if (!type) {
+      throw new Error('Missing required field: type');
+    }
+
+    console.log(`Processing request - Type: ${type}, Selection: ${selection}`);
+    const result = await updateTweetMetrics(type, selection);
+    
+    console.log('Update completed successfully:', result);
+    res.json({ success: true, result });
   } catch (error) {
-    console.error('Error updating metrics:', error);
-    res.json({
-      success: false,
-      updatedCount: 0,
-      failedCount: 0,
-      error: error.message
+    console.error('Error processing request:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: error.stack
     });
   }
 });
 
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'Tweet Metrics Service is running',
-    environment: {
-      googleCredentialsSet: !!process.env.GOOGLE_CREDENTIALS,
-      spreadsheetIdSet: !!process.env.SPREADSHEET_ID,
-      apifyTokenSet: !!process.env.APIFY_TOKEN
-    }
-  });
+  res.json({ status: 'ok', message: 'Tweet Metrics Service is running' });
 });
 
 const PORT = process.env.PORT || 3000;
