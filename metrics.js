@@ -70,10 +70,72 @@ async function updateTweetMetrics(type, selection) {
   const rows = logRange.data.values.slice(1); // Skip header row
   let tweetIds = [];
 
-  // [Previous selection logic remains the same]
-  // ... [keep the existing switch statement for selecting tweet IDs]
+  switch(type) {
+    case 'single':
+      const rowIndex = parseInt(selection) - 2; // -2 because of 0-based index and header row
+      console.log('Single row selection:', {
+        selection,
+        rowIndex,
+        rowsLength: rows.length,
+        rowData: rows[rowIndex]
+      });
+      if (rowIndex >= 0 && rowIndex < rows.length) {
+        const tweetId = rows[rowIndex][3]; // Column D contains Tweet ID
+        console.log('Single tweet ID:', { tweetId, type: typeof tweetId });
+        if (tweetId) tweetIds.push(tweetId.toString().trim());
+      }
+      break;
 
-  console.log('Tweet IDs to update:', tweetIds);
+    case 'multiple':
+      const rowNumbers = selection.split(',').map(num => parseInt(num.trim()) - 2);
+      console.log('Multiple row selection:', { 
+        selection, 
+        rowNumbers,
+        rowsLength: rows.length
+      });
+      tweetIds = rowNumbers
+        .filter(idx => idx >= 0 && idx < rows.length)
+        .map(idx => {
+          const tweetId = rows[idx][3];
+          console.log(`Row ${idx} tweet ID:`, { tweetId, type: typeof tweetId });
+          return tweetId;
+        })
+        .filter(id => id)
+        .map(id => id.toString().trim());
+      break;
+
+    case 'month':
+      const [year, month] = selection.split('-').map(num => parseInt(num, 10));
+      if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        throw new Error('Invalid month format. Use YYYY-MM (e.g., 2024-01)');
+      }
+
+      rows.forEach((row, idx) => {
+        const dateStr = row[0];
+        try {
+          const rowDate = new Date(dateStr);
+          if (rowDate.getFullYear() === year && rowDate.getMonth() === month - 1) {
+            const tweetId = row[3];
+            if (tweetId) tweetIds.push(tweetId.toString().trim());
+          }
+        } catch (error) {
+          console.warn(`Invalid date format in row ${idx + 2}: ${dateStr}`);
+        }
+      });
+      break;
+
+    case 'all':
+      tweetIds = rows
+        .map(row => row[3])
+        .filter(id => id)
+        .map(id => id.toString().trim());
+      break;
+
+    default:
+      throw new Error('Invalid selection type. Use: single, multiple, month, or all');
+  }
+
+  console.log('Final tweet IDs:', tweetIds);
 
   if (tweetIds.length === 0) {
     throw new Error('No valid tweet IDs found for the given criteria');
