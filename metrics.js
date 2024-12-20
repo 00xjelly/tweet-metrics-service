@@ -4,6 +4,17 @@ import fetch from 'node-fetch';
 
 const APIFY_URL = 'https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items';
 
+// Function to format date to YYYY-MM-DD
+function formatDate(dateString) {
+  try {
+    const date = new Date(dateString);
+    return date.toISOString().split('T')[0];
+  } catch (error) {
+    console.warn(`Error formatting date: ${dateString}`, error);
+    return dateString;
+  }
+}
+
 async function getTweetMetrics(tweetId) {
   console.log(`Fetching metrics for tweet: ${tweetId}`);
   try {
@@ -126,16 +137,16 @@ async function updateTweetMetrics(type, selection) {
         console.log(`Got data for tweet ${tweetId}:`, tweetData);
         
         metrics.push([
-          tweetData.createdAt,
+          formatDate(tweetData.createdAt),
           tweetId,
           `https://twitter.com/${tweetData.author?.userName || ''}`,
-          tweetData.createdAt,
+          formatDate(tweetData.createdAt),
           tweetData.viewCount || 0,
           tweetData.likeCount || 0,
           tweetData.replyCount || 0,
           tweetData.retweetCount || 0,
           tweetData.bookmarkCount || 0,
-          new Date().toISOString(),
+          formatDate(new Date().toISOString()),
           tweetData.url || `https://twitter.com/i/web/status/${tweetId}`,
           tweetData.text || '',
           tweetData.isReply ? 'Yes' : 'No',
@@ -153,19 +164,49 @@ async function updateTweetMetrics(type, selection) {
     }
   }
 
-  console.log('Metrics to append:', metrics);
+  console.log('Metrics to append/update:', metrics);
 
   if (metrics.length > 0) {
-    console.log('Appending to PostMetrics sheet...');
-    await sheets.spreadsheets.values.append({
+    console.log('Updating PostMetrics sheet...');
+    
+    // Fetch existing PostMetrics data to check for duplicates
+    const postMetricsRange = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'PostMetrics!A1',
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      resource: {
-        values: metrics
-      },
+      range: 'PostMetrics!A:B', // Assuming first column is date, second is tweet ID
     });
+
+    const existingRows = postMetricsRange.data.values || [];
+    const updateOperations = [];
+
+    metrics.forEach((metricRow) => {
+      const tweetId = metricRow[1]; // Tweet ID is the second column
+      const existingRowIndex = existingRows.findIndex(row => row[1] === tweetId);
+
+      if (existingRowIndex !== -1) {
+        // Row exists, prepare update
+        updateOperations.push({
+          range: `PostMetrics!A${existingRowIndex + 1}:N${existingRowIndex + 1}`,
+          values: [metricRow]
+        });
+      } else {
+        // Row doesn't exist, prepare append
+        updateOperations.push({
+          range: 'PostMetrics!A1',
+          values: [metricRow]
+        });
+      }
+    });
+
+    // Batch update the sheet
+    if (updateOperations.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        resource: {
+          valueInputOption: 'USER_ENTERED',
+          data: updateOperations
+        }
+      });
+    }
   }
 
   const result = { 
