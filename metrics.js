@@ -78,10 +78,6 @@ async function updateTweetMetrics(type, selection) {
   const rows = logRange.data.values.slice(1); // Skip header row
   let tweetIds = [];
 
-  // Debugging log to check rows
-  console.log('Total rows:', rows.length);
-  console.log('Sample rows:', rows.slice(0, 3));
-
   switch(type) {
     case 'single':
       const rowIndex = parseInt(selection) - 2; // -2 because of 0-based index and header row
@@ -169,16 +165,16 @@ async function updateTweetMetrics(type, selection) {
       console.log(`Batch ${batchNumber} - Successful tweets: ${batchTweetData.length} out of ${batch.length}`);
 
       const batchMetrics = batchTweetData.map(tweetData => [
-        formatDate(tweetData.createdAt),
+        new Date().toISOString(), // Column A: Current timestamp
         tweetData.id,
         `https://twitter.com/${tweetData.author?.userName || ''}`,
-        formatDate(tweetData.createdAt),
+        formatDate(tweetData.createdAt), // Column D: Formatted tweet date
         tweetData.viewCount || 0,
         tweetData.likeCount || 0,
         tweetData.replyCount || 0,
         tweetData.retweetCount || 0,
         tweetData.bookmarkCount || 0,
-        formatDate(new Date().toISOString()),
+        formatDate(tweetData.createdAt), // Column J: Update timestamp
         tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`,
         tweetData.text || '',
         tweetData.isReply ? 'Yes' : 'No',
