@@ -113,3 +113,5 @@ async function updateTweetMetrics(type, selection) {
   console.log('Update complete:', result);
   return result;
 }
+
+export { updateTweetMetrics };
