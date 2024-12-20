@@ -1,3 +1,7 @@
+import { google } from 'googleapis';
+import { authorize } from './google-auth.js';  // Make sure this import is correct
+import fetch from 'node-fetch';
+
 async function updateTweetMetrics(type, selection) {
   console.log(`Starting update with type: ${type}, selection: ${selection}`);
   
