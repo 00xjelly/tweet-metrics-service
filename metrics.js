@@ -184,7 +184,7 @@ async function updateTweetMetrics(type, selection) {
 
       for (const tweetData of batchTweetData) {
         const metricRow = [
-          new Date().toISOString(),
+          new Date().toISOString(), // Current timestamp
           tweetData.id,
           `https://twitter.com/${tweetData.author?.userName || ''}`,
           formatDate(tweetData.createdAt),
@@ -193,7 +193,7 @@ async function updateTweetMetrics(type, selection) {
           tweetData.replyCount || 0,
           tweetData.retweetCount || 0,
           tweetData.bookmarkCount || 0,
-          formatDate(tweetData.createdAt),
+          formatDate(tweetData.createdAt), // Update timestamp
           tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`,
           tweetData.text || '',
           tweetData.isReply ? 'Yes' : 'No',
@@ -202,13 +202,13 @@ async function updateTweetMetrics(type, selection) {
 
         const existingRowNumber = existingTweetMap.get(tweetData.id);
         if (existingRowNumber) {
-          // Update existing row
+          // Always update existing row when found
           updatedMetrics.push({
             rowNumber: existingRowNumber,
             values: metricRow
           });
         } else {
-          // Add to new metrics for appending
+          // Only create new row if it doesn't exist
           newMetrics.push(metricRow);
         }
       }
@@ -240,7 +240,7 @@ async function updateTweetMetrics(type, selection) {
     }
   }
 
-  // Update existing rows
+  // Process all updates first
   if (updatedMetrics.length > 0) {
     console.log(`Updating ${updatedMetrics.length} existing rows...`);
     const updateRequests = updatedMetrics.map(({ rowNumber, values }) => ({
@@ -258,7 +258,7 @@ async function updateTweetMetrics(type, selection) {
     }
   }
 
-  // Append new rows
+  // Then append any new rows
   if (newMetrics.length > 0) {
     console.log(`Appending ${newMetrics.length} new rows...`);
     await sheets.spreadsheets.values.append({
