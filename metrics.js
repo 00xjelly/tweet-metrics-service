@@ -65,6 +65,23 @@ async function updateTweetMetrics(type, selection) {
   const auth = await authorize();
   const sheets = google.sheets({ version: 'v4', auth });
   
+  // First, fetch existing metrics data
+  console.log('Fetching existing metrics data...');
+  const existingMetricsRange = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.SPREADSHEET_ID,
+    range: 'PostMetrics!A:N',
+  });
+  
+  const existingMetrics = existingMetricsRange.data.values || [];
+  const existingTweetMap = new Map();
+  
+  // Create a map of existing tweet IDs to their row numbers (1-based index for Google Sheets API)
+  existingMetrics.forEach((row, index) => {
+    if (index > 0 && row[1]) { // Skip header row and ensure tweet ID exists
+      existingTweetMap.set(row[1], index + 1); // +1 for 1-based index
+    }
+  });
+  
   console.log('Fetching data from Log sheet...');
   const logRange = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.SPREADSHEET_ID,
@@ -80,7 +97,7 @@ async function updateTweetMetrics(type, selection) {
 
   switch(type) {
     case 'single':
-      const rowIndex = parseInt(selection) - 2; // -2 because of 0-based index and header row
+      const rowIndex = parseInt(selection) - 2;
       console.log('Single row selection:', {
         selection,
         rowIndex,
@@ -88,7 +105,7 @@ async function updateTweetMetrics(type, selection) {
         rowData: rows[rowIndex]
       });
       if (rowIndex >= 0 && rowIndex < rows.length) {
-        const tweetId = rows[rowIndex][3]; // Column D contains Tweet ID
+        const tweetId = rows[rowIndex][3];
         console.log('Single tweet ID:', { tweetId, type: typeof tweetId });
         if (tweetId) tweetIds.push(tweetId.toString().trim());
       }
@@ -149,9 +166,10 @@ async function updateTweetMetrics(type, selection) {
     throw new Error('No valid tweet IDs found for the given criteria');
   }
 
-  const metrics = [];
+  const newMetrics = [];
+  const updatedMetrics = [];
   const errors = [];
-  const batchSize = 15; // Match Apify's batch processing
+  const batchSize = 15;
   const totalTweets = tweetIds.length;
 
   for (let i = 0; i < tweetIds.length; i += batchSize) {
@@ -164,24 +182,36 @@ async function updateTweetMetrics(type, selection) {
       
       console.log(`Batch ${batchNumber} - Successful tweets: ${batchTweetData.length} out of ${batch.length}`);
 
-      const batchMetrics = batchTweetData.map(tweetData => [
-        new Date().toISOString(), // Column A: Current timestamp
-        tweetData.id,
-        `https://twitter.com/${tweetData.author?.userName || ''}`,
-        formatDate(tweetData.createdAt), // Column D: Formatted tweet date
-        tweetData.viewCount || 0,
-        tweetData.likeCount || 0,
-        tweetData.replyCount || 0,
-        tweetData.retweetCount || 0,
-        tweetData.bookmarkCount || 0,
-        formatDate(tweetData.createdAt), // Column J: Update timestamp
-        tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`,
-        tweetData.text || '',
-        tweetData.isReply ? 'Yes' : 'No',
-        tweetData.isQuote ? 'Yes' : 'No'
-      ]);
+      for (const tweetData of batchTweetData) {
+        const metricRow = [
+          new Date().toISOString(),
+          tweetData.id,
+          `https://twitter.com/${tweetData.author?.userName || ''}`,
+          formatDate(tweetData.createdAt),
+          tweetData.viewCount || 0,
+          tweetData.likeCount || 0,
+          tweetData.replyCount || 0,
+          tweetData.retweetCount || 0,
+          tweetData.bookmarkCount || 0,
+          formatDate(tweetData.createdAt),
+          tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`,
+          tweetData.text || '',
+          tweetData.isReply ? 'Yes' : 'No',
+          tweetData.isQuote ? 'Yes' : 'No'
+        ];
 
-      metrics.push(...batchMetrics);
+        const existingRowNumber = existingTweetMap.get(tweetData.id);
+        if (existingRowNumber) {
+          // Update existing row
+          updatedMetrics.push({
+            rowNumber: existingRowNumber,
+            values: metricRow
+          });
+        } else {
+          // Add to new metrics for appending
+          newMetrics.push(metricRow);
+        }
+      }
 
       // Track failed tweets in this batch
       const failedTweets = batch.filter(tweetId => 
@@ -210,26 +240,42 @@ async function updateTweetMetrics(type, selection) {
     }
   }
 
-  console.log('Metrics to append:', metrics);
+  // Update existing rows
+  if (updatedMetrics.length > 0) {
+    console.log(`Updating ${updatedMetrics.length} existing rows...`);
+    const updateRequests = updatedMetrics.map(({ rowNumber, values }) => ({
+      range: `PostMetrics!A${rowNumber}:N${rowNumber}`,
+      values: [values]
+    }));
 
-  if (metrics.length > 0) {
-    console.log('Appending to PostMetrics sheet...');
-    
-    // Append to the bottom of the sheet
+    for (const request of updateRequests) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: request.range,
+        valueInputOption: 'USER_ENTERED',
+        resource: { values: request.values }
+      });
+    }
+  }
+
+  // Append new rows
+  if (newMetrics.length > 0) {
+    console.log(`Appending ${newMetrics.length} new rows...`);
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PostMetrics!A:N',
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       resource: {
-        values: metrics
+        values: newMetrics
       }
     });
   }
 
   const result = { 
     totalTweets,
-    updatedCount: metrics.length,
+    newRows: newMetrics.length,
+    updatedRows: updatedMetrics.length,
     failedCount: errors.length,
     errors: errors.length > 0 ? errors : undefined
   };
