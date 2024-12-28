@@ -5,12 +5,23 @@ import fetch from 'node-fetch';
 const APIFY_URL = 'https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items';
 
 // Function to format date to YYYY-MM-DD
-function formatDate(dateString) {
+function formatDateOnly(dateString) {
   try {
     const date = new Date(dateString);
     return date.toISOString().split('T')[0];
   } catch (error) {
     console.warn(`Error formatting date: ${dateString}`, error);
+    return dateString;
+  }
+}
+
+// Function to format full timestamp
+function formatTimestamp(dateString) {
+  try {
+    const date = new Date(dateString);
+    return date.toISOString();
+  } catch (error) {
+    console.warn(`Error formatting timestamp: ${dateString}`, error);
     return dateString;
   }
 }
@@ -182,38 +193,37 @@ async function updateTweetMetrics(type, selection) {
       
       console.log(`Batch ${batchNumber} - Successful tweets: ${batchTweetData.length} out of ${batch.length}`);
 
+      const currentTimestamp = new Date().toISOString();
+
       for (const tweetData of batchTweetData) {
         const metricRow = [
-          new Date().toISOString(), // Current timestamp
-          tweetData.id,
-          `https://twitter.com/${tweetData.author?.userName || ''}`,
-          formatDate(tweetData.createdAt),
-          tweetData.viewCount || 0,
-          tweetData.likeCount || 0,
-          tweetData.replyCount || 0,
-          tweetData.retweetCount || 0,
-          tweetData.bookmarkCount || 0,
-          formatDate(tweetData.createdAt), // Update timestamp
-          tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`,
-          tweetData.text || '',
-          tweetData.isReply ? 'Yes' : 'No',
-          tweetData.isQuote ? 'Yes' : 'No'
+          formatTimestamp(tweetData.createdAt),  // Col A - Full timestamp of tweet creation
+          tweetData.id,                         // Col B
+          `https://twitter.com/${tweetData.author?.userName || ''}`, // Col C
+          formatDateOnly(tweetData.createdAt),  // Col D - Date only YYYY-MM-DD
+          tweetData.viewCount || 0,             // Col E
+          tweetData.likeCount || 0,             // Col F
+          tweetData.replyCount || 0,            // Col G
+          tweetData.retweetCount || 0,          // Col H
+          tweetData.bookmarkCount || 0,         // Col I
+          currentTimestamp,                     // Col J - Full timestamp of last update
+          tweetData.url || `https://twitter.com/i/web/status/${tweetData.id}`, // Col K
+          tweetData.text || '',                 // Col L
+          tweetData.isReply ? 'Yes' : 'No',     // Col M
+          tweetData.isQuote ? 'Yes' : 'No'      // Col N
         ];
 
         const existingRowNumber = existingTweetMap.get(tweetData.id);
         if (existingRowNumber) {
-          // Always update existing row when found
           updatedMetrics.push({
             rowNumber: existingRowNumber,
             values: metricRow
           });
         } else {
-          // Only create new row if it doesn't exist
           newMetrics.push(metricRow);
         }
       }
 
-      // Track failed tweets in this batch
       const failedTweets = batch.filter(tweetId => 
         !batchTweetData.some(tweet => tweet.id === tweetId)
       );
@@ -233,14 +243,12 @@ async function updateTweetMetrics(type, selection) {
       })));
     }
 
-    // Add a small delay between batches to avoid rate limiting
     if (i + batchSize < tweetIds.length) {
       console.log(`Waiting before next batch (${i + batchSize}/${totalTweets} processed)`);
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 
-  // Process all updates first
   if (updatedMetrics.length > 0) {
     console.log(`Updating ${updatedMetrics.length} existing rows...`);
     const updateRequests = updatedMetrics.map(({ rowNumber, values }) => ({
@@ -258,7 +266,6 @@ async function updateTweetMetrics(type, selection) {
     }
   }
 
-  // Then append any new rows
   if (newMetrics.length > 0) {
     console.log(`Appending ${newMetrics.length} new rows...`);
     await sheets.spreadsheets.values.append({
