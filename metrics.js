@@ -222,7 +222,7 @@ async function updateTweetMetrics(type, selection) {
         const metricRow = [
           formatTimestamp(tweetData.createdAt),  // Col A - Full timestamp of tweet creation
           tweetData.id,                         // Col B
-          `https://twitter.com/${tweetData.author?.userName || ''}`, // Col C
+          `https://x.com/${tweetData.author?.userName || ''}`, // Col C
           formatDateOnly(tweetData.createdAt),  // Col D - Date only YYYY-MM-DD
           tweetData.viewCount || 0,             // Col E
           tweetData.likeCount || 0,             // Col F
